@@ -8,19 +8,24 @@
 //
 // We use HTTP POST requests with CSRF Tokens to protect against CSRF attacks.
 
+import "navigator.locks"
+import { LockManager } from "navigator.locks"
 import * as React from "react"
-import _logger, { proxyLogger } from "../lib/logger"
-import parseUrl from "../lib/parse-url"
 import { Session } from ".."
 import {
+  apiBaseUrl,
   BroadcastChannel,
   CtxOrReq,
-  apiBaseUrl,
   fetchData,
-  now,
   NextAuthClientConfig,
+  now,
 } from "../client/_utils"
-
+import _logger, { proxyLogger } from "../lib/logger"
+import parseUrl from "../lib/parse-url"
+import type {
+  BuiltInProviderType,
+  RedirectableProviderType,
+} from "../providers"
 import type {
   ClientSafeProvider,
   LiteralUnion,
@@ -32,11 +37,6 @@ import type {
   SignOutResponse,
   UseSessionOptions,
 } from "./types"
-
-import type {
-  BuiltInProviderType,
-  RedirectableProviderType,
-} from "../providers"
 
 export * from "./types"
 
@@ -122,16 +122,34 @@ export type GetSessionParams = CtxOrReq & {
 }
 
 export async function getSession(params?: GetSessionParams) {
-  const session = await fetchData<Session>(
-    "session",
-    __NEXTAUTH,
-    logger,
-    params
-  )
-  if (params?.broadcast ?? true) {
-    broadcast.post({ event: "session", data: { trigger: "getSession" } })
+  if (typeof window !== "undefined") {
+    await (navigator as Navigator & { locks: LockManager }).locks.request(
+      "NEXT_AUTH:GET_SESSION",
+      async (lock) => {
+        const session = await fetchData<Session>(
+          "session",
+          __NEXTAUTH,
+          logger,
+          params
+        )
+        if (params?.broadcast ?? true) {
+          broadcast.post({ event: "session", data: { trigger: "getSession" } })
+        }
+        return session
+      }
+    )
+  } else {
+    const session = await fetchData<Session>(
+      "session",
+      __NEXTAUTH,
+      logger,
+      params
+    )
+    if (params?.broadcast ?? true) {
+      broadcast.post({ event: "session", data: { trigger: "getSession" } })
+    }
+    return session
   }
-  return session
 }
 
 /**

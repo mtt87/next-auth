@@ -1,6 +1,6 @@
 {
-  "name": "next-auth",
-  "version": "0.0.0-semantically-released",
+  "name": "@mtt/next-auth",
+  "version": "0.4.2",
   "description": "Authentication for Next.js",
   "homepage": "https://next-auth.js.org",
   "repository": "https://github.com/nextauthjs/next-auth.git",
@@ -63,6 +63,7 @@
     "@babel/runtime": "^7.15.4",
     "@panva/hkdf": "^1.0.0",
     "jose": "^4.1.2",
+    "navigator.locks": "^0.8.1",
     "oauth": "^0.9.15",
     "openid-client": "^5.0.2",
     "preact": "^10.5.14",
