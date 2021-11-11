@@ -122,11 +122,12 @@ export type GetSessionParams = CtxOrReq & {
 }
 
 export async function getSession(params?: GetSessionParams) {
+  let session: Session | null = null
   if (typeof window !== "undefined") {
     await (navigator as Navigator & { locks: LockManager }).locks.request(
       "NEXT_AUTH:GET_SESSION",
       async (lock) => {
-        const session = await fetchData<Session>(
+        session = await fetchData<Session>(
           "session",
           __NEXTAUTH,
           logger,
@@ -135,21 +136,15 @@ export async function getSession(params?: GetSessionParams) {
         if (params?.broadcast ?? true) {
           broadcast.post({ event: "session", data: { trigger: "getSession" } })
         }
-        return session
       }
     )
   } else {
-    const session = await fetchData<Session>(
-      "session",
-      __NEXTAUTH,
-      logger,
-      params
-    )
+    session = await fetchData<Session>("session", __NEXTAUTH, logger, params)
     if (params?.broadcast ?? true) {
       broadcast.post({ event: "session", data: { trigger: "getSession" } })
     }
-    return session
   }
+  return session
 }
 
 /**
