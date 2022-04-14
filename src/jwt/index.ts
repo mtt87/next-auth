@@ -1,7 +1,8 @@
 import hkdf from "@panva/hkdf"
-import { EncryptJWT, jwtDecrypt } from "jose"
-import { NextApiRequest } from "next"
+import type { NextApiRequest } from "next"
 import { v4 as uuid } from "uuid"
+import type { LoggerInstance } from ".."
+import { SessionStore } from "../core/lib/cookie"
 import type { JWT, JWTDecodeParams, JWTEncodeParams } from "./types"
 
 export * from "./types"
@@ -55,6 +56,7 @@ export interface GetTokenParams<R extends boolean = false> {
   raw?: R
   secret: string
   decode?: typeof decode
+  logger?: LoggerInstance | Console
 }
 
 /**
@@ -76,21 +78,23 @@ export async function getToken<R extends boolean = false>(
       : "next-auth.session-token",
     raw,
     decode: _decode = decode,
+    logger = console,
   } = params ?? {}
 
   if (!req) throw new Error("Must pass `req` to JWT getToken()")
 
-  let token = req.cookies[cookieName]
+  const sessionStore = new SessionStore(
+    { name: cookieName, options: { secure: secureCookie } },
+    { cookies: req.cookies, headers: req.headers },
+    logger
+  )
 
-  if (!token && req.headers.authorization?.split(" ")[0] === "Bearer") {
-    const urlEncodedToken = req.headers.authorization.split(" ")[1]
-    token = decodeURIComponent(urlEncodedToken)
-  }
+  const token = sessionStore.value
+  // @ts-expect-error
+  if (!token) return null
 
-  if (raw) {
-    // @ts-expect-error
-    return token
-  }
+  // @ts-expect-error
+  if (raw) return token
 
   try {
     // @ts-expect-error

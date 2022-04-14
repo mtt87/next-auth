@@ -1,17 +1,20 @@
-import logger from "../lib/logger"
+import logger, { setLogger } from "../lib/logger"
 import * as routes from "./routes"
 import renderPage from "./pages"
-import type { NextAuthOptions } from "./types"
 import { init } from "./init"
-import { Cookie } from "./lib/cookie"
+import { assertConfig } from "./lib/assert"
+import { SessionStore } from "./lib/cookie"
 
-import { NextAuthAction } from "../lib/types"
+import type { NextAuthOptions } from "./types"
+import type { NextAuthAction } from "../lib/types"
+import type { Cookie } from "./lib/cookie"
+import type { ErrorType } from "./pages/error"
 
 export interface IncomingRequest {
   /** @default "http://localhost:3000" */
   host: string
-  method: string
-  cookies?: Record<string, any>
+  method?: string
+  cookies?: Record<string, string>
   headers?: Record<string, any>
   query?: Record<string, any>
   body?: Record<string, any>
@@ -35,7 +38,7 @@ export interface OutgoingResponse<
   cookies?: Cookie[]
 }
 
-interface NextAuthHandlerParams {
+export interface NextAuthHandlerParams {
   req: IncomingRequest
   options: NextAuthOptions
 }
@@ -44,7 +47,27 @@ export async function NextAuthHandler<
   Body extends string | Record<string, any> | any[]
 >(params: NextAuthHandlerParams): Promise<OutgoingResponse<Body>> {
   const { options: userOptions, req } = params
-  const { action, providerId, error } = req
+
+  setLogger(userOptions.logger, userOptions.debug)
+
+  const assertionResult = assertConfig(params)
+
+  if (typeof assertionResult === "string") {
+    logger.warn(assertionResult)
+  } else if (assertionResult instanceof Error) {
+    // Bail out early if there's an error in the user config
+    const { pages, theme } = userOptions
+    logger.error(assertionResult.code, assertionResult)
+    if (pages?.error) {
+      return {
+        redirect: `${pages.error}?error=Configuration`,
+      }
+    }
+    const render = renderPage({ theme })
+    return render.error({ error: "configuration" })
+  }
+
+  const { action, providerId, error, method = "GET" } = req
 
   const { options, cookies } = await init({
     userOptions,
@@ -54,23 +77,23 @@ export async function NextAuthHandler<
     callbackUrl: req.body?.callbackUrl ?? req.query?.callbackUrl,
     csrfToken: req.body?.csrfToken,
     cookies: req.cookies,
-    isPost: req.method === "POST",
+    isPost: method === "POST",
   })
 
-  const sessionToken =
-    req.cookies?.[options.cookies.sessionToken.name] ||
-    req.headers?.Authorization?.replace("Bearer ", "")
+  const sessionStore = new SessionStore(
+    options.cookies.sessionToken,
+    req,
+    options.logger
+  )
 
-  const codeVerifier = req.cookies?.[options.cookies.pkceCodeVerifier.name]
-
-  if (req.method === "GET") {
-    const render = renderPage({ options, query: req.query, cookies })
+  if (method === "GET") {
+    const render = renderPage({ ...options, query: req.query, cookies })
     const { pages } = options
     switch (action) {
       case "providers":
         return (await routes.providers(options.providers)) as any
       case "session":
-        return (await routes.session({ options, sessionToken })) as any
+        return (await routes.session({ options, sessionStore })) as any
       case "csrf":
         return {
           headers: [{ key: "Content-Type", value: "application/json" }],
@@ -96,11 +119,11 @@ export async function NextAuthHandler<
           const callback = await routes.callback({
             body: req.body,
             query: req.query,
-            method: req.method,
             headers: req.headers,
+            cookies: req.cookies,
+            method,
             options,
-            sessionToken,
-            codeVerifier,
+            sessionStore,
           })
           if (callback.cookies) cookies.push(...callback.cookies)
           return { ...callback, cookies }
@@ -139,10 +162,10 @@ export async function NextAuthHandler<
           return { redirect: `${options.url}/signin?error=${error}`, cookies }
         }
 
-        return render.error({ error })
+        return render.error({ error: error as ErrorType })
       default:
     }
-  } else if (req.method === "POST") {
+  } else if (method === "POST") {
     switch (action) {
       case "signin":
         // Verified CSRF Token required for all sign in routes
@@ -160,7 +183,7 @@ export async function NextAuthHandler<
       case "signout":
         // Verified CSRF Token required for signout
         if (options.csrfTokenVerified) {
-          const signout = await routes.signout({ options, sessionToken })
+          const signout = await routes.signout({ options, sessionStore })
           if (signout.cookies) cookies.push(...signout.cookies)
           return { ...signout, cookies }
         }
@@ -178,11 +201,11 @@ export async function NextAuthHandler<
           const callback = await routes.callback({
             body: req.body,
             query: req.query,
-            method: req.method,
             headers: req.headers,
+            cookies: req.cookies,
+            method,
             options,
-            sessionToken,
-            codeVerifier,
+            sessionStore,
           })
           if (callback.cookies) cookies.push(...callback.cookies)
           return { ...callback, cookies }
@@ -205,6 +228,6 @@ export async function NextAuthHandler<
 
   return {
     status: 400,
-    body: `Error: Action ${action} with HTTP ${req.method} is not supported by NextAuth.js` as any,
+    body: `Error: Action ${action} with HTTP ${method} is not supported by NextAuth.js` as any,
   }
 }

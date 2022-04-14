@@ -1,5 +1,5 @@
-import { CommonProviderOptions } from "../providers"
-import { Profile, TokenSet, User, Awaitable } from ".."
+import type { CommonProviderOptions } from "../providers"
+import type { Profile, TokenSet, User, Awaitable } from ".."
 
 import type {
   AuthorizationParameters,
@@ -9,10 +9,11 @@ import type {
   IssuerMetadata,
   OAuthCallbackChecks,
   OpenIDCallbackChecks,
+  HttpOptions,
 } from "openid-client"
 import type { JWK } from "jose"
 
-type Client = InstanceType<Issuer['Client']>;
+type Client = InstanceType<Issuer["Client"]>
 
 export type { OAuthProviderType } from "./oauth-types"
 
@@ -114,10 +115,7 @@ export interface OAuthConfig<P> extends CommonProviderOptions, PartialIssuer {
   client?: Partial<ClientMetadata>
   jwks?: { keys: JWK[] }
   clientId?: string
-  clientSecret?:
-    | string
-    // TODO: only allow for Apple
-    | Record<"appleId" | "teamId" | "privateKey" | "keyId", string>
+  clientSecret?: string
   /**
    * If set to `true`, the user information will be extracted
    * from the `id_token` claims, instead of
@@ -132,6 +130,9 @@ export interface OAuthConfig<P> extends CommonProviderOptions, PartialIssuer {
   region?: string
   // TODO: only allow for some
   issuer?: string
+  /** Read more at: https://github.com/panva/node-openid-client/tree/main/docs#customizing-http-requests */
+  httpOptions?: HttpOptions
+
   /**
    * The options provided by the user.
    * We will perform a deep-merge of these values

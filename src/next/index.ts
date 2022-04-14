@@ -1,76 +1,57 @@
-import {
+import { NextAuthHandler } from "../core"
+import { setCookie } from "./cookie"
+
+import type {
   GetServerSidePropsContext,
   NextApiRequest,
   NextApiResponse,
 } from "next"
-import { NextAuthOptions, Session } from ".."
-import { NextAuthHandler } from "../core"
-import { NextAuthAction, NextAuthRequest, NextAuthResponse } from "../lib/types"
-import { set as setCookie } from "../core/lib/cookie"
-import logger, { setLogger } from "../lib/logger"
+import type { NextAuthOptions, Session } from ".."
+import type {
+  NextAuthAction,
+  NextAuthRequest,
+  NextAuthResponse,
+} from "../lib/types"
 
 async function NextAuthNextHandler(
   req: NextApiRequest,
   res: NextApiResponse,
   options: NextAuthOptions
 ) {
-  setLogger(options.logger)
-
-  if (!req.query.nextauth) {
-    const error = new Error(
-      "Cannot find [...nextauth].js in pages/api/auth. Make sure the filename is written correctly."
-    )
-
-    logger.error("MISSING_NEXTAUTH_API_ROUTE_ERROR", error)
-    return res.status(500).send(error.message)
-  }
-
-  const host = (process.env.NEXTAUTH_URL ?? process.env.VERCEL_URL) as string
-  if (!host) logger.warn("NEXTAUTH_URL")
-
-  const {
-    body,
-    redirect,
-    cookies,
-    headers,
-    status = 200,
-  } = await NextAuthHandler({
+  const handler = await NextAuthHandler({
     req: {
-      host,
+      host: (process.env.NEXTAUTH_URL ?? process.env.VERCEL_URL) as string,
       body: req.body,
       query: req.query,
       cookies: req.cookies,
       headers: req.headers,
-      method: req.method ?? "GET",
-      action: req.query.nextauth[0] as NextAuthAction,
-      providerId: req.query.nextauth[1],
-      error: (req.query.error as string | undefined) ?? req.query.nextauth[1],
+      method: req.method,
+      action: req.query.nextauth?.[0] as NextAuthAction,
+      providerId: req.query.nextauth?.[1],
+      error: (req.query.error as string | undefined) ?? req.query.nextauth?.[1],
     },
     options,
   })
 
-  res.status(status)
+  res.status(handler.status ?? 200)
 
-  cookies?.forEach((cookie) => {
-    setCookie(res, cookie.name, cookie.value, cookie.options)
-  })
-  headers?.forEach((header) => {
-    res.setHeader(header.key, header.value)
-  })
+  handler.cookies?.forEach((cookie) => setCookie(res, cookie))
 
-  if (redirect) {
+  handler.headers?.forEach((h) => res.setHeader(h.key, h.value))
+
+  if (handler.redirect) {
     // If the request expects a return URL, send it as JSON
     // instead of doing an actual redirect.
     if (req.body?.json !== "true") {
       // Could chain. .end() when lowest target is Node 14
       // https://github.com/nodejs/node/issues/33148
-      res.status(302).setHeader("Location", redirect)
+      res.status(302).setHeader("Location", handler.redirect)
       return res.end()
     }
-    return res.json({ url: redirect })
+    return res.json({ url: handler.redirect })
   }
 
-  return res.send(body)
+  return res.send(handler.body)
 }
 
 function NextAuth(options: NextAuthOptions): any
@@ -115,9 +96,7 @@ export async function getServerSession(
 
   const { body, cookies } = session
 
-  cookies?.forEach((cookie) => {
-    setCookie(context.res, cookie.name, cookie.value, cookie.options)
-  })
+  cookies?.forEach((cookie) => setCookie(context.res, cookie))
 
   if (body && Object.keys(body).length) return body as Session
   return null

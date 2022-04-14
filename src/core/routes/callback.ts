@@ -1,23 +1,23 @@
 import oAuthCallback from "../lib/oauth/callback"
 import callbackHandler from "../lib/callback-handler"
-import * as cookie from "../lib/cookie"
 import { hashToken } from "../lib/utils"
-import { InternalOptions } from "../../lib/types"
-import { IncomingRequest, OutgoingResponse } from ".."
-import { User } from "../.."
+
+import type { InternalOptions } from "../../lib/types"
+import type { IncomingRequest, OutgoingResponse } from ".."
+import type { Cookie, SessionStore } from "../lib/cookie"
+import type { User } from "../.."
 
 /** Handle callbacks from login services */
 export default async function callback(params: {
   options: InternalOptions<"oauth" | "credentials" | "email">
   query: IncomingRequest["query"]
-  method: IncomingRequest["method"]
+  method: Required<IncomingRequest>["method"]
   body: IncomingRequest["body"]
   headers: IncomingRequest["headers"]
-  sessionToken?: string
-  codeVerifier?: string
+  cookies: IncomingRequest["cookies"]
+  sessionStore: SessionStore
 }): Promise<OutgoingResponse> {
-  const { options, query, body, method, headers, sessionToken, codeVerifier } =
-    params
+  const { options, query, body, method, headers, sessionStore } = params
   const {
     provider,
     adapter,
@@ -31,7 +31,7 @@ export default async function callback(params: {
     logger,
   } = options
 
-  const cookies: cookie.Cookie[] = []
+  const cookies: Cookie[] = []
 
   const useJwtSession = sessionStrategy === "jwt"
 
@@ -47,7 +47,7 @@ export default async function callback(params: {
         body,
         method,
         options,
-        codeVerifier,
+        cookies: params.cookies,
       })
 
       if (oauthCookies) cookies.push(...oauthCookies)
@@ -112,7 +112,7 @@ export default async function callback(params: {
         // Sign user in
         // @ts-expect-error
         const { user, session, isNewUser } = await callbackHandler({
-          sessionToken,
+          sessionToken: sessionStore.value,
           profile,
           // @ts-expect-error
           account,
@@ -135,29 +135,25 @@ export default async function callback(params: {
             isNewUser,
           })
 
-          // Sign and encrypt token
-          const newEncodedJwt = await jwt.encode({ ...jwt, token })
+          // Encode token
+          const newToken = await jwt.encode({ ...jwt, token })
 
           // Set cookie expiry date
           const cookieExpires = new Date()
           cookieExpires.setTime(cookieExpires.getTime() + sessionMaxAge * 1000)
 
-          cookies.push({
-            name: options.cookies.sessionToken.name,
-            value: newEncodedJwt,
-            options: {
-              expires: cookieExpires,
-              ...options.cookies.sessionToken.options,
-            },
+          const sessionCookies = sessionStore.chunk(newToken, {
+            expires: cookieExpires,
           })
+          cookies.push(...sessionCookies)
         } else {
           // Save Session Token in cookie
           cookies.push({
             name: options.cookies.sessionToken.name,
             value: session.sessionToken,
             options: {
-              expires: session.expires,
               ...options.cookies.sessionToken.options,
+              expires: session.expires,
             },
           })
         }
@@ -202,15 +198,9 @@ export default async function callback(params: {
     }
   } else if (provider.type === "email") {
     try {
-      if (!adapter) {
-        logger.error(
-          "EMAIL_REQUIRES_ADAPTER_ERROR",
-          new Error("E-mail login requires an adapter but it was undefined")
-        )
-        return { redirect: `${url}/error?error=Configuration`, cookies }
-      }
-
-      const { useVerificationToken, getUserByEmail } = adapter
+      // Verified in `assertConfig`
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const { useVerificationToken, getUserByEmail } = adapter!
 
       const token = query?.token
       const identifier = query?.email
@@ -266,7 +256,7 @@ export default async function callback(params: {
       // Sign user in
       // @ts-expect-error
       const { user, session, isNewUser } = await callbackHandler({
-        sessionToken,
+        sessionToken: sessionStore.value,
         // @ts-expect-error
         profile,
         // @ts-expect-error
@@ -289,29 +279,25 @@ export default async function callback(params: {
           isNewUser,
         })
 
-        // Sign and encrypt token
-        const newEncodedJwt = await jwt.encode({ ...jwt, token })
+        // Encode token
+        const newToken = await jwt.encode({ ...jwt, token })
 
         // Set cookie expiry date
         const cookieExpires = new Date()
         cookieExpires.setTime(cookieExpires.getTime() + sessionMaxAge * 1000)
 
-        cookies.push({
-          name: options.cookies.sessionToken.name,
-          value: newEncodedJwt,
-          options: {
-            expires: cookieExpires,
-            ...options.cookies.sessionToken.options,
-          },
+        const sessionCookies = sessionStore.chunk(newToken, {
+          expires: cookieExpires,
         })
+        cookies.push(...sessionCookies)
       } else {
         // Save Session Token in cookie
         cookies.push({
           name: options.cookies.sessionToken.name,
           value: session.sessionToken,
           options: {
-            expires: session.expires,
             ...options.cookies.sessionToken.options,
+            expires: session.expires,
           },
         })
       }
@@ -341,34 +327,6 @@ export default async function callback(params: {
       return { redirect: `${url}/error?error=Callback`, cookies }
     }
   } else if (provider.type === "credentials" && method === "POST") {
-    if (!useJwtSession) {
-      logger.error(
-        "CALLBACK_CREDENTIALS_JWT_ERROR",
-        new Error(
-          "Signin in with credentials is only supported if JSON Web Tokens are enabled"
-        )
-      )
-      return {
-        status: 500,
-        redirect: `${url}/error?error=Configuration`,
-        cookies,
-      }
-    }
-
-    if (!provider.authorize) {
-      logger.error(
-        "CALLBACK_CREDENTIALS_HANDLER_ERROR",
-        new Error(
-          "Must define an authorize() handler to use credentials authentication provider"
-        )
-      )
-      return {
-        status: 500,
-        redirect: `${url}/error?error=Configuration`,
-        cookies,
-      }
-    }
-
     const credentials = body
 
     let user: User
@@ -445,21 +403,18 @@ export default async function callback(params: {
       isNewUser: false,
     })
 
-    // Sign and encrypt token
-    const newEncodedJwt = await jwt.encode({ ...jwt, token })
+    // Encode token
+    const newToken = await jwt.encode({ ...jwt, token })
 
     // Set cookie expiry date
     const cookieExpires = new Date()
     cookieExpires.setTime(cookieExpires.getTime() + sessionMaxAge * 1000)
 
-    cookies.push({
-      name: options.cookies.sessionToken.name,
-      value: newEncodedJwt,
-      options: {
-        expires: cookieExpires,
-        ...options.cookies.sessionToken.options,
-      },
+    const sessionCookies = sessionStore.chunk(newToken, {
+      expires: cookieExpires,
     })
+
+    cookies.push(...sessionCookies)
 
     // @ts-expect-error
     await events.signIn?.({ user, account })

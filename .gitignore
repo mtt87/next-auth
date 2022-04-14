@@ -43,12 +43,17 @@ app/package-lock.json
 app/yarn.lock
 app/prisma/migrations
 app/prisma/dev.db*
+app/dist
+app/next-auth
 
 # VS
 /.vs/slnx.sqlite-journal
 /.vs/slnx.sqlite
 /.vs
 .vscode
+
+# Jetbrains
+.idea
 
 # GitHub Actions runner
 /actions-runner

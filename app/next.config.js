@@ -2,6 +2,9 @@ const path = require("path")
 
 module.exports = {
   webpack(config) {
+    config.experiments = {
+      topLevelAwait: true,
+    }
     config.resolve = {
       ...config.resolve,
       alias: {
@@ -17,6 +20,9 @@ module.exports = {
     }
 
     return config
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
   experimental: {
     externalDir: true,

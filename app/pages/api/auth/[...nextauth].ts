@@ -23,6 +23,8 @@ import CognitoProvider from "next-auth/providers/cognito"
 import SlackProvider from "next-auth/providers/slack"
 import Okta from "next-auth/providers/okta"
 import AzureB2C from "next-auth/providers/azure-ad-b2c"
+import OsuProvider from "next-auth/providers/osu"
+import AppleProvider from "next-auth/providers/apple"
 
 // import { PrismaAdapter } from "@next-auth/prisma-adapter"
 // import { PrismaClient } from "@prisma/client"
@@ -42,15 +44,15 @@ export const authOptions: NextAuthOptions = {
   providers: [
     // E-mail
     // Start fake e-mail server with `npm run start:email`
-    EmailProvider({
-      server: {
-        host: "127.0.0.1",
-        auth: null,
-        secure: false,
-        port: 1025,
-        tls: { rejectUnauthorized: false },
-      },
-    }),
+    // EmailProvider({
+    //   server: {
+    //     host: "127.0.0.1",
+    //     auth: null,
+    //     secure: false,
+    //     port: 1025,
+    //     tls: { rejectUnauthorized: false },
+    //   },
+    // }),
     // Credentials
     CredentialsProvider({
       name: "Credentials",
@@ -167,11 +169,16 @@ export const authOptions: NextAuthOptions = {
       tenantId: process.env.AZURE_B2C_TENANT_ID,
       primaryUserFlow: process.env.AZURE_B2C_PRIMARY_USER_FLOW,
     }),
+    OsuProvider({
+      clientId: process.env.OSU_CLIENT_ID,
+      clientSecret: process.env.OSU_CLIENT_SECRET,
+    }),
+    AppleProvider({
+      clientId: process.env.APPLE_ID,
+      clientSecret: process.env.APPLE_SECRET,
+    }),
   ],
-  jwt: {
-    encryption: true,
-    secret: process.env.SECRET,
-  },
+  secret: process.env.SECRET,
   debug: true,
   theme: {
     colorScheme: "auto",
